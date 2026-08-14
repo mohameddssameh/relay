@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: relay
+  datasource:
+    url: jdbc:postgresql://localhost:5432/relay
+    username: relay
+    password: relay
+  flyway:
+    locations: classpath:db/migration
+
+logging:
+  level:
+    dev.relay: info
