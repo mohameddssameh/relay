@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Relay Dashboard - Job detail</title>
+    <link rel="stylesheet" href="/dashboard.css"/>
+</head>
+<body>
+<nav>
+    <a href="/dashboard">Overview</a>
+    <a href="/dashboard/jobs">Jobs</a>
+    <a href="/dashboard/dead-letter">Dead letter</a>
+</nav>
+
+<div th:if="${job == null}">
+    <h1>Job not found</h1>
+    <p>No job with this id in <code>jobs</code> - it may have already completed and rolled off,
+        or moved to <a href="/dashboard/dead-letter">dead letter</a>.</p>
+</div>
+
+<div th:if="${job != null}">
+    <h1>Job <span th:text="${job.id()}"></span></h1>
+    <table>
+        <tr>
+            <th>Type</th>
+            <td th:text="${job.type()}"></td>
+        </tr>
+        <tr>
+            <th>Status</th>
+            <td th:text="${job.status()}"></td>
+        </tr>
+        <tr>
+            <th>Attempts</th>
+            <td th:text="${job.attempts()}"></td>
+        </tr>
+        <tr>
+            <th>Created at</th>
+            <td th:text="${job.createdAt()}"></td>
+        </tr>
+        <tr>
+            <th>Run at</th>
+            <td th:text="${job.runAt()}"></td>
+        </tr>
+        <tr>
+            <th>Last failed at</th>
+            <td th:text="${job.lastFailedAt() ?: '-'}"></td>
+        </tr>
+        <tr>
+            <th>Worker id</th>
+            <td th:text="${job.workerId() ?: '-'}"></td>
+        </tr>
+    </table>
+
+    <h2>Payload</h2>
+    <pre th:text="${job.payload()}"></pre>
+
+    <h2>Last error</h2>
+    <pre th:text="${job.lastError() ?: '(none)'}"></pre>
+</div>
+</body>
+</html>

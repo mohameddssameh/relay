@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Relay Dashboard - Jobs</title>
+    <link rel="stylesheet" href="/dashboard.css"/>
+</head>
+<body>
+<nav>
+    <a href="/dashboard">Overview</a>
+    <a href="/dashboard/jobs">Jobs</a>
+    <a href="/dashboard/dead-letter">Dead letter</a>
+</nav>
+
+<h1>Jobs</h1>
+
+<div class="filters">
+    <a href="/dashboard/jobs" th:classappend="${statusFilter == null} ? 'active'">All</a>
+    <a href="/dashboard/jobs?status=queued" th:classappend="${statusFilter == 'queued'} ? 'active'">Queued</a>
+    <a href="/dashboard/jobs?status=running" th:classappend="${statusFilter == 'running'} ? 'active'">Running</a>
+    <a href="/dashboard/jobs?status=completed" th:classappend="${statusFilter == 'completed'} ? 'active'">Completed</a>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Attempts</th>
+        <th>Created</th>
+        <th>Last error</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="job : ${jobs}">
+        <td><a th:href="@{/dashboard/jobs/{id}(id=${job.id()})}" th:text="${job.id()}">id</a></td>
+        <td th:text="${job.type()}">type</td>
+        <td th:text="${job.status()}" th:class="'status-' + ${job.status()}">status</td>
+        <td th:text="${job.attempts()}">0</td>
+        <td th:text="${job.createdAt()}">created</td>
+        <td class="error-preview" th:text="${job.lastErrorPreview()}"></td>
+    </tr>
+    <tr th:if="${jobs.isEmpty()}">
+        <td colspan="6">No jobs.</td>
+    </tr>
+    </tbody>
+</table>
+</body>
+</html>
