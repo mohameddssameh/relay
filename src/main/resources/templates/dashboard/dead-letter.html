@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Relay Dashboard - Dead letter</title>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <link rel="stylesheet" href="/dashboard.css"/>
+</head>
+<body>
+<nav>
+    <a href="/dashboard">Overview</a>
+    <a href="/dashboard/jobs">Jobs</a>
+    <a href="/dashboard/dead-letter">Dead letter</a>
+</nav>
+
+<h1>Dead letter</h1>
+
+<table>
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Attempts</th>
+        <th>Dead-lettered at</th>
+        <th>Last error</th>
+        <th>Actions</th>
+    </tr>
+    </thead>
+    <tbody id="dead-letter-rows">
+    <tr th:each="job : ${deadLetterJobs}" th:id="'dead-letter-row-' + ${job.id()}">
+        <td th:text="${job.id()}">id</td>
+        <td th:text="${job.type()}">type</td>
+        <td th:text="${job.attempts()}">0</td>
+        <td th:text="${job.deadLetteredAt()}">dead-lettered</td>
+        <td class="error-preview" th:text="${job.lastErrorPreview()}"></td>
+        <td>
+            <button th:attr="hx-post=@{/dashboard/dead-letter/{id}/retry(id=${job.id()})}"
+                    hx-target="closest tr" hx-swap="outerHTML"
+                    hx-confirm="Retry this job? It will go back into the queue.">Retry
+            </button>
+            <button th:attr="hx-post=@{/dashboard/dead-letter/{id}/delete(id=${job.id()})}"
+                    hx-target="closest tr" hx-swap="outerHTML"
+                    hx-confirm="Permanently delete this job? This cannot be undone.">Delete
+            </button>
+        </td>
+    </tr>
+    <tr th:if="${deadLetterJobs.isEmpty()}">
+        <td colspan="6">No dead-lettered jobs.</td>
+    </tr>
+    </tbody>
+</table>
+</body>
+</html>

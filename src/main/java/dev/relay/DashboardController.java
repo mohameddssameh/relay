@@ -2,10 +2,13 @@ package dev.relay;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -68,6 +71,40 @@ public class DashboardController {
         return "dashboard/job-detail";
     }
 
+    @GetMapping("/dashboard/dead-letter")
+    public String deadLetter(Model model) {
+        List<DeadLetterSummary> deadLetterJobs = jdbcTemplate.query(
+                "SELECT id, type, attempts, dead_lettered_at, last_error FROM dead_letter_jobs "
+                        + "ORDER BY dead_lettered_at DESC LIMIT ?",
+                DashboardController::mapDeadLetterSummary, LIST_LIMIT);
+        model.addAttribute("deadLetterJobs", deadLetterJobs);
+        return "dashboard/dead-letter";
+    }
+
+    // Runs as one transaction (unlike Worker, this class IS a Spring bean, so @Transactional's
+    // AOP proxying works normally here - no self-invocation concern).
+    @PostMapping("/dashboard/dead-letter/{id}/retry")
+    @Transactional
+    @ResponseBody
+    public String retry(@PathVariable UUID id) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO jobs (id, type, payload, status, created_at, run_at, attempts)
+                SELECT id, type, payload, 'queued', created_at, now(), 0
+                FROM dead_letter_jobs WHERE id = ?
+                """,
+                id);
+        jdbcTemplate.update("DELETE FROM dead_letter_jobs WHERE id = ?", id);
+        return "";
+    }
+
+    @PostMapping("/dashboard/dead-letter/{id}/delete")
+    @ResponseBody
+    public String delete(@PathVariable UUID id) {
+        jdbcTemplate.update("DELETE FROM dead_letter_jobs WHERE id = ?", id);
+        return "";
+    }
+
     private void addCounts(Model model) {
         model.addAttribute("queuedCount", count("SELECT COUNT(*) FROM jobs WHERE status = 'queued'"));
         model.addAttribute("runningCount", count("SELECT COUNT(*) FROM jobs WHERE status = 'running'"));
@@ -121,5 +158,26 @@ public class DashboardController {
 
     record JobDetail(UUID id, String type, String status, int attempts, String payload, Instant createdAt,
                       Instant runAt, String lastError, Instant lastFailedAt, UUID workerId) {
+    }
+
+    private static DeadLetterSummary mapDeadLetterSummary(ResultSet rs, int rowNum) throws SQLException {
+        return new DeadLetterSummary(
+                (UUID) rs.getObject("id"),
+                rs.getString("type"),
+                rs.getInt("attempts"),
+                rs.getTimestamp("dead_lettered_at").toInstant(),
+                rs.getString("last_error"));
+    }
+
+    record DeadLetterSummary(UUID id, String type, int attempts, Instant deadLetteredAt, String lastError) {
+
+        private static final int PREVIEW_LENGTH = 80;
+
+        public String lastErrorPreview() {
+            if (lastError == null) {
+                return "";
+            }
+            return lastError.length() > PREVIEW_LENGTH ? lastError.substring(0, PREVIEW_LENGTH) + "..." : lastError;
+        }
     }
 }
