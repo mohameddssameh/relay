@@ -2,8 +2,10 @@ package dev.relay;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -13,11 +15,19 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Component
 public class Worker {
@@ -25,6 +35,8 @@ public class Worker {
     private static final Logger log = LoggerFactory.getLogger(Worker.class);
 
     private static final int MAX_ERROR_LENGTH = 2000;
+
+    private static final Duration CANCEL_GRACE_PERIOD = Duration.ofSeconds(5);
 
     private static final String CLAIM_SQL = """
             SELECT id, type, payload, attempts
@@ -40,17 +52,25 @@ public class Worker {
     private final ObjectMapper objectMapper;
     private final Map<String, JobHandler> handlersByType;
     private final BackoffStrategy backoffStrategy;
+    private final ExecutorService jobExecutor;
 
     public Worker(JdbcTemplate jdbcTemplate,
                   PlatformTransactionManager transactionManager,
                   ObjectMapper objectMapper,
                   Map<String, JobHandler> handlersByType,
-                  BackoffStrategy backoffStrategy) {
+                  BackoffStrategy backoffStrategy,
+                  @Value("${relay.worker.pool-size:4}") int poolSize) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.objectMapper = objectMapper;
         this.handlersByType = handlersByType;
         this.backoffStrategy = backoffStrategy;
+        this.jobExecutor = Executors.newFixedThreadPool(poolSize);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        jobExecutor.shutdownNow();
     }
 
     @Scheduled(fixedDelay = 2000)
@@ -77,10 +97,44 @@ public class Worker {
                 throw new IllegalStateException("No handler registered for job type '" + job.type() + "'");
             }
             JsonNode payload = objectMapper.readTree(job.payloadJson());
-            handler.handle(payload);
+            runWithTimeout(job, handler, payload);
             jdbcTemplate.update("UPDATE jobs SET status = 'completed' WHERE id = ?", job.id());
         } catch (Exception e) {
             handleFailure(job, handler, e);
+        }
+    }
+
+    private void runWithTimeout(ClaimedJob job, JobHandler handler, JsonNode payload) throws Exception {
+        CountDownLatch handlerFinished = new CountDownLatch(1);
+        Future<?> future = jobExecutor.submit(() -> {
+            try {
+                handler.handle(payload);
+            } finally {
+                handlerFinished.countDown();
+            }
+        });
+
+        try {
+            future.get(handler.timeout().toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            boolean stoppedInTime = handlerFinished.await(CANCEL_GRACE_PERIOD.toMillis(), TimeUnit.MILLISECONDS);
+            if (!stoppedInTime) {
+                log.warn("Handler for job {} of type '{}' didn't respond to interrupt within {}s"
+                                + " — worker thread may be leaked",
+                        job.id(), job.type(), CANCEL_GRACE_PERIOD.toSeconds());
+            }
+            throw new TimeoutException(
+                    "Handler for job type '" + job.type() + "' exceeded timeout of " + handler.timeout());
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception ex) {
+                throw ex;
+            }
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
         }
     }
 
