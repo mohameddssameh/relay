@@ -1,5 +1,7 @@
 # Relay
 
+[![CI](https://github.com/mohameddssameh/relay/actions/workflows/ci.yml/badge.svg)](https://github.com/mohameddssameh/relay/actions/workflows/ci.yml)
+
 A Postgres-backed job queue for Java, inspired by Sidekiq (Ruby) and BullMQ (Node).
 
 ## Why
@@ -56,3 +58,13 @@ need for `docker compose up` first):
 Milestone 1: enqueue a job, have a worker claim and run it, watch the status
 flip to `completed` in Postgres. No retries, no scheduling UI, no delayed
 jobs yet — that's later milestones.
+
+## Known limitations (Milestone 1)
+
+- No retries yet — a failing job is marked `failed` immediately. Retries and
+  dead-lettering are Milestone 2.
+- A worker that crashes between marking a job `running` and `completed` will
+  leave that job stuck in `running` forever. Heartbeat + auto-recovery is
+  Milestone 3.
+- No priority queues, no scheduled/cron jobs, no per-type concurrency limits
+  yet.
