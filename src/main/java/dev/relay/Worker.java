@@ -12,6 +12,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,8 +24,10 @@ public class Worker {
 
     private static final Logger log = LoggerFactory.getLogger(Worker.class);
 
+    private static final int MAX_ERROR_LENGTH = 2000;
+
     private static final String CLAIM_SQL = """
-            SELECT id, type, payload
+            SELECT id, type, payload, attempts
             FROM jobs
             WHERE status = 'queued' AND run_at <= now()
             ORDER BY run_at
@@ -35,15 +39,18 @@ public class Worker {
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
     private final Map<String, JobHandler> handlersByType;
+    private final BackoffStrategy backoffStrategy;
 
     public Worker(JdbcTemplate jdbcTemplate,
                   PlatformTransactionManager transactionManager,
                   ObjectMapper objectMapper,
-                  Map<String, JobHandler> handlersByType) {
+                  Map<String, JobHandler> handlersByType,
+                  BackoffStrategy backoffStrategy) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.objectMapper = objectMapper;
         this.handlersByType = handlersByType;
+        this.backoffStrategy = backoffStrategy;
     }
 
     @Scheduled(fixedDelay = 2000)
@@ -64,8 +71,8 @@ public class Worker {
     }
 
     private void execute(ClaimedJob job) {
+        JobHandler handler = handlersByType.get(job.type());
         try {
-            JobHandler handler = handlersByType.get(job.type());
             if (handler == null) {
                 throw new IllegalStateException("No handler registered for job type '" + job.type() + "'");
             }
@@ -73,15 +80,52 @@ public class Worker {
             handler.handle(payload);
             jdbcTemplate.update("UPDATE jobs SET status = 'completed' WHERE id = ?", job.id());
         } catch (Exception e) {
-            log.error("Job {} of type '{}' failed", job.id(), job.type(), e);
-            jdbcTemplate.update("UPDATE jobs SET status = 'failed' WHERE id = ?", job.id());
+            handleFailure(job, handler, e);
         }
     }
 
-    private static ClaimedJob mapRow(ResultSet rs, int rowNum) throws SQLException {
-        return new ClaimedJob((UUID) rs.getObject("id"), rs.getString("type"), rs.getString("payload"));
+    private void handleFailure(ClaimedJob job, JobHandler handler, Exception e) {
+        int attemptNumber = job.attempts() + 1;
+        int maxAttempts = handler != null ? handler.maxAttempts() : 0;
+        String errorDescription = describeError(e);
+        Instant failedAt = Instant.now();
+
+        log.error("Job {} of type '{}' failed on attempt {}/{}", job.id(), job.type(), attemptNumber, maxAttempts, e);
+
+        transactionTemplate.executeWithoutResult(status -> {
+            if (attemptNumber < maxAttempts) {
+                Instant nextRunAt = failedAt.plus(backoffStrategy.nextDelay(attemptNumber));
+                jdbcTemplate.update(
+                        """
+                        UPDATE jobs
+                        SET status = 'queued', attempts = ?, run_at = ?, last_error = ?, last_failed_at = ?
+                        WHERE id = ?
+                        """,
+                        attemptNumber, Timestamp.from(nextRunAt), errorDescription, Timestamp.from(failedAt), job.id());
+            } else {
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO dead_letter_jobs (id, type, payload, status, created_at, run_at, attempts, last_error, last_failed_at)
+                        SELECT id, type, payload, 'failed', created_at, run_at, ?, ?, ?
+                        FROM jobs
+                        WHERE id = ?
+                        """,
+                        attemptNumber, errorDescription, Timestamp.from(failedAt), job.id());
+                jdbcTemplate.update("DELETE FROM jobs WHERE id = ?", job.id());
+            }
+        });
     }
 
-    private record ClaimedJob(UUID id, String type, String payloadJson) {
+    private static String describeError(Exception e) {
+        String detail = e.getClass().getName() + (e.getMessage() != null ? ": " + e.getMessage() : "");
+        return detail.length() > MAX_ERROR_LENGTH ? detail.substring(0, MAX_ERROR_LENGTH) : detail;
+    }
+
+    private static ClaimedJob mapRow(ResultSet rs, int rowNum) throws SQLException {
+        return new ClaimedJob(
+                (UUID) rs.getObject("id"), rs.getString("type"), rs.getString("payload"), rs.getInt("attempts"));
+    }
+
+    private record ClaimedJob(UUID id, String type, String payloadJson, int attempts) {
     }
 }
