@@ -88,6 +88,10 @@ public class Worker {
         return workerId;
     }
 
+    public boolean isJobExecutorShutdown() {
+        return jobExecutor.isShutdown();
+    }
+
     public void start() {
         Timestamp now = Timestamp.from(Instant.now());
         jdbcTemplate.update(
