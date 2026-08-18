@@ -2,6 +2,7 @@ package dev.relay;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -11,11 +12,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,26 +39,21 @@ class CleanShutdownTest {
     private WorkerFleet workerFleet;
 
     @Test
-    void workersRowIsDeletedOnPreDestroy() throws SQLException {
+    void workersRowIsDeletedOnPreDestroy() {
         UUID workerId = workerFleet.getWorkers().get(0).getWorkerId();
 
         Integer beforeCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM workers WHERE id = ?", Integer.class, workerId);
         assertThat(beforeCount).isEqualTo(1);
 
-        // Closing the context shuts down the DataSource too, so jdbcTemplate is unusable
-        // afterward - verify through a fresh, independent JDBC connection instead.
-        applicationContext.close();
+        // Destroy just the workerFleet singleton through Spring's real bean-destruction
+        // machinery (which is what actually invokes @PreDestroy) instead of closing the whole
+        // context - closing the context also tears down the Testcontainers-backed DataSource
+        // and container itself, leaving nothing left to verify against afterward.
+        ((DefaultListableBeanFactory) applicationContext.getBeanFactory()).destroySingleton("workerFleet");
 
-        try (Connection connection = DriverManager.getConnection(
-                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-             PreparedStatement statement = connection.prepareStatement(
-                     "SELECT COUNT(*) FROM workers WHERE id = ?")) {
-            statement.setObject(1, workerId);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                resultSet.next();
-                assertThat(resultSet.getInt(1)).isZero();
-            }
-        }
+        Integer afterCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM workers WHERE id = ?", Integer.class, workerId);
+        assertThat(afterCount).isZero();
     }
 }
