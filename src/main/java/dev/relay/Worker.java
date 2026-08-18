@@ -84,9 +84,11 @@ public class Worker {
             if (rows.isEmpty()) {
                 return null;
             }
-            ClaimedJob job = rows.get(0);
-            jdbcTemplate.update("UPDATE jobs SET status = 'running' WHERE id = ?", job.id());
-            return job;
+            ClaimedJob row = rows.get(0);
+            int attemptNumber = row.attempts() + 1;
+            jdbcTemplate.update(
+                    "UPDATE jobs SET status = 'running', attempts = ? WHERE id = ?", attemptNumber, row.id());
+            return new ClaimedJob(row.id(), row.type(), row.payloadJson(), attemptNumber);
         }));
     }
 
@@ -139,7 +141,7 @@ public class Worker {
     }
 
     private void handleFailure(ClaimedJob job, JobHandler handler, Exception e) {
-        int attemptNumber = job.attempts() + 1;
+        int attemptNumber = job.attempts();
         int maxAttempts = handler != null ? handler.maxAttempts() : 0;
         String errorDescription = describeError(e);
         Instant failedAt = Instant.now();
@@ -152,19 +154,19 @@ public class Worker {
                 jdbcTemplate.update(
                         """
                         UPDATE jobs
-                        SET status = 'queued', attempts = ?, run_at = ?, last_error = ?, last_failed_at = ?
+                        SET status = 'queued', run_at = ?, last_error = ?, last_failed_at = ?
                         WHERE id = ?
                         """,
-                        attemptNumber, Timestamp.from(nextRunAt), errorDescription, Timestamp.from(failedAt), job.id());
+                        Timestamp.from(nextRunAt), errorDescription, Timestamp.from(failedAt), job.id());
             } else {
                 jdbcTemplate.update(
                         """
                         INSERT INTO dead_letter_jobs (id, type, payload, status, created_at, run_at, attempts, last_error, last_failed_at)
-                        SELECT id, type, payload, 'failed', created_at, run_at, ?, ?, ?
+                        SELECT id, type, payload, 'failed', created_at, run_at, attempts, ?, ?
                         FROM jobs
                         WHERE id = ?
                         """,
-                        attemptNumber, errorDescription, Timestamp.from(failedAt), job.id());
+                        errorDescription, Timestamp.from(failedAt), job.id());
                 jdbcTemplate.update("DELETE FROM jobs WHERE id = ?", job.id());
             }
         });
