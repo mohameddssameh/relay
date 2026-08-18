@@ -55,16 +55,23 @@ need for `docker compose up` first):
 
 ## Status
 
-Milestone 1: enqueue a job, have a worker claim and run it, watch the status
-flip to `completed` in Postgres. No retries, no scheduling UI, no delayed
-jobs yet — that's later milestones.
+Milestone 2: failing jobs retry with exponential backoff and jitter, get a
+per-handler timeout enforced via a bounded executor, and move to a
+`dead_letter_jobs` table once they exhaust their attempts. No scheduling UI or
+delayed-enqueue API yet — that's later milestones.
 
-## Known limitations (Milestone 1)
+## Known limitations (Milestone 2)
 
-- No retries yet — a failing job is marked `failed` immediately. Retries and
-  dead-lettering are Milestone 2.
 - A worker that crashes between marking a job `running` and `completed` will
   leave that job stuck in `running` forever. Heartbeat + auto-recovery is
   Milestone 3.
 - No priority queues, no scheduled/cron jobs, no per-type concurrency limits
   yet.
+- Handler timeouts are enforced with cooperative cancellation
+  (`Future.cancel(true)`), which only *requests* an interrupt — it can't force
+  a CPU-bound or non-interruptible handler to actually stop. Such a handler
+  keeps running in the background past its timeout (logged as a `WARN` if it
+  hasn't stopped within 5s), even though the job itself has already been
+  requeued or dead-lettered. Handlers doing long-running work should
+  periodically check `Thread.currentThread().isInterrupted()` so they can
+  cooperate with cancellation.
