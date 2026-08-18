@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Relay Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <link rel="stylesheet" href="/dashboard.css"/>
+</head>
+<body>
+<nav>
+    <a href="/dashboard">Overview</a>
+    <a href="/dashboard/jobs">Jobs</a>
+    <a href="/dashboard/dead-letter">Dead letter</a>
+</nav>
+
+<h1>Relay</h1>
+
+<div id="counts" hx-get="/dashboard/counts" hx-trigger="every 2s" hx-swap="innerHTML">
+    <div th:fragment="countsFragment" class="counts">
+        <div class="count-tile">
+            <span class="value" th:text="${queuedCount}">0</span>
+            <span class="label">queued</span>
+        </div>
+        <div class="count-tile">
+            <span class="value" th:text="${runningCount}">0</span>
+            <span class="label">running</span>
+        </div>
+        <div class="count-tile">
+            <span class="value" th:text="${completedCount}">0</span>
+            <span class="label">completed (24h)</span>
+        </div>
+        <div class="count-tile">
+            <span class="value" th:text="${deadLetterCount}">0</span>
+            <span class="label">failed (dead letter)</span>
+        </div>
+        <div class="count-tile">
+            <span class="value" th:text="${activeWorkerCount}">0</span>
+            <span class="label">active workers</span>
+        </div>
+    </div>
+</div>
+</body>
+</html>

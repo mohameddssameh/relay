@@ -1,0 +1,112 @@
+:root {
+    color-scheme: light dark;
+}
+
+body {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    max-width: 960px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    line-height: 1.5;
+}
+
+nav {
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #8888;
+}
+
+nav a {
+    margin-right: 1rem;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+h1, h2 {
+    font-size: 1.1rem;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+th, td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid #8884;
+    font-size: 0.9rem;
+    vertical-align: top;
+}
+
+th {
+    font-weight: bold;
+}
+
+.counts {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.count-tile {
+    border: 1px solid #8888;
+    border-radius: 4px;
+    padding: 0.75rem 1.25rem;
+    min-width: 8rem;
+}
+
+.count-tile .value {
+    font-size: 1.6rem;
+    font-weight: bold;
+    display: block;
+}
+
+.count-tile .label {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+.status-queued { color: #b58900; }
+.status-running { color: #268bd2; }
+.status-completed { color: #2aa198; }
+.status-failed { color: #dc322f; }
+
+.error-preview {
+    font-size: 0.8rem;
+    opacity: 0.8;
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.filters a {
+    margin-right: 0.75rem;
+}
+
+.filters a.active {
+    font-weight: bold;
+    text-decoration: underline;
+}
+
+button {
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.25rem 0.6rem;
+    margin-right: 0.4rem;
+    cursor: pointer;
+}
+
+pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #8881;
+    padding: 0.75rem;
+    border-radius: 4px;
+}
